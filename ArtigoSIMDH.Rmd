@@ -308,6 +308,50 @@ ggplot(df_sum, aes(x = as.numeric(tempo), y = media)) +
   )
 ```
 
+
+```{r ANOVA, echo=FALSE}
+library(rstatix)
+
+# ANOVA de medidas repetidas para cada variável ao longo do tempo
+# rstatix::anova_test já calcula teste de esfericidade (Mauchly) e aplica
+# correção de Greenhouse-Geisser automaticamente quando necessário
+
+# Qualidade do sono
+anova_qualsono <- dados_long |>
+  anova_test(dv = qualsono, wid = id, within = tempo, effect.size = "both")
+get_anova_table(anova_qualsono)
+
+# Atividade física (IPAQ)
+anova_ipaq <- dados_long |>
+  anova_test(dv = ipaq_aftot, wid = id, within = tempo, effect.size = "both")
+get_anova_table(anova_ipaq)
+
+# Regulação integrada
+anova_integrada <- dados_long |>
+  anova_test(dv = integrada, wid = id, within = tempo, effect.size = "both")
+get_anova_table(anova_integrada)
+
+# Regulação intrínseca
+anova_intrinseca <- dados_long |>
+  anova_test(dv = intrinseca, wid = id, within = tempo, effect.size = "both")
+get_anova_table(anova_intrinseca)
+
+# Comparações post-hoc pareadas (caso a ANOVA seja significativa),
+# com correção de Bonferroni
+dados_long |>
+  pairwise_t_test(ipaq_aftot ~ tempo, paired = TRUE, p.adjust.method = "bonferroni")
+
+dados_long |>
+  pairwise_t_test(qualsono ~ tempo, paired = TRUE, p.adjust.method = "bonferroni")
+
+dados_long |>
+  pairwise_t_test(integrada ~ tempo, paired = TRUE, p.adjust.method = "bonferroni")
+
+dados_long |>
+  pairwise_t_test(intrinseca ~ tempo, paired = TRUE, p.adjust.method = "bonferroni")
+
+```
+
 ```{r Model 1 - Intrinsic regulation, echo=FALSE}
 
 dados_z <- dados_long |> 
