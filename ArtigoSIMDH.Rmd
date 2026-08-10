@@ -307,8 +307,6 @@ ggplot(df_sum, aes(x = as.numeric(tempo), y = media)) +
     title = "Motivation, PA and sleep overtime"
   )
 ```
-
-
 ```{r ANOVA, echo=FALSE}
 library(rstatix)
 
@@ -352,6 +350,7 @@ dados_long |>
 
 ```
 
+
 ```{r Model 1 - Intrinsic regulation, echo=FALSE}
 
 dados_z <- dados_long |> 
@@ -386,61 +385,7 @@ confint(m_comb, method = "Wald")
 
 ```
 
-```{r Forest plot, echo=FALSE, fig.width=10}
 
-### Gui, esse gráfico vai para o artigo! podes verificar porque a legenda ficou cortada?(aqui não ficou cortada) --- mudei um coeficiente padronizado pra Standardized coefficient, só avisando que foi mexido
-
-extract_model <- function(model, model_name) {
-  broom.mixed::tidy(model, effects = "fixed", conf.int = TRUE, conf.method = "Wald") |>
-    mutate(model = model_name)
-}
-
-res <- bind_rows(
-  extract_model(m_intr_z, "Model 1: Intrinsic Reg."),
-  extract_model(m_intg_z, "Model 2: Integrated Reg."),
-  extract_model(m_comb,   "Model 3: Combined")
-) |>
-  filter(term != "(Intercept)") |>
-  mutate(
-    signif = p.value < 0.05,
-    term = dplyr::recode(term,
-      tempoT2    = "Timepoints (T2 vs T1)",
-      tempoT3    = "Timepoints (T3 vs T1)",
-      Idade      = "Age",
-      intrinseca = "Intrinsic Reg.",
-      integrada  = "Integrated Reg.",
-      qualsono   = "Sleep Quality"
-    ),
-    term = factor(term, levels = rev(c("Timepoints (T2 vs T1)", "Timepoints (T3 vs T1)",
-                                        "Age", "Intrinsic Reg.",
-                                        "Integrated Reg.", "Sleep Quality")))
-  )
-
-forest <- ggplot(res, aes(x = estimate, y = term, color = model)) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "grey50") +
-  geom_pointrange(
-    aes(xmin = conf.low, xmax = conf.high, shape = signif),
-    position = position_dodge(width = 0.6), size = 0.7, fatten = 2.2
-  ) +
-  scale_shape_manual(values = c(`TRUE` = 16, `FALSE` = 1),
-                      labels = c(`TRUE` = "p < .05", `FALSE` = "n.s."),
-                      name = "Significancy") +
-  scale_color_brewer(palette = "Dark2", name = "Model") +
-  labs(
-    x = "Standardized coefficient (β) [IC 95%]",
-    y = NULL,
-    title = "PA predictors over time",
-    subtitle = "Comparison among the three models"
-  ) +
-  theme_minimal(base_size = 12) +
-  theme(
-    legend.position = "bottom",
-    panel.grid.minor = element_blank(),
-    plot.title = element_text(face = "bold")
-  )
-ggsave("ci_models.png", plot = forest, width = 10, height = 8, dpi = 300)
-print (forest)
-```
 
 
 ```{r Forest plot P&B, echo=FALSE, fig.width=10}
@@ -453,12 +398,20 @@ extract_model <- function(model, model_name) {
 }
 
 res <- bind_rows(
-  extract_model(m_intr_z, "Model 1: Intrinsic Reg."),
-  extract_model(m_intg_z, "Model 2: Integrated Reg."),
+  extract_model(m_intg_z, "Model 1: Integrated Reg."),
+  extract_model(m_intr_z, "Model 2: Intrinsic Reg."),
   extract_model(m_comb,   "Model 3: Combined")
 ) |>
   filter(term != "(Intercept)") |>
   mutate(
+    model = factor(
+      model,
+      levels = c(
+        "Model 1: Integrated Reg.",
+        "Model 2: Intrinsic Reg.",
+        "Model 3: Combined"
+      )
+    ),
     signif = p.value < 0.05,
     term = dplyr::recode(
       term,
@@ -487,7 +440,8 @@ forest <- ggplot(
   aes(
     x = estimate,
     y = term,
-    linetype = model
+    linetype = model,
+    group = model
   )
 ) +
   geom_vline(
@@ -523,7 +477,19 @@ forest <- ggplot(
       "dashed",
       "dotted"
     ),
+    breaks = c(
+      "Model 1: Integrated Reg.",
+      "Model 2: Intrinsic Reg.",
+      "Model 3: Combined"
+    ),
     name = "Model"
+  ) +
+  guides(
+    shape = guide_legend(order = 1),
+    linetype = guide_legend(
+      order = 2,
+      override.aes = list(shape = NA)
+    )
   ) +
   labs(
     x = "Standardized coefficient (β) [95% CI]",
