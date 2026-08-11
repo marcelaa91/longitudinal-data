@@ -29,8 +29,6 @@ library(see)
 ```{r data cleaning, include=FALSE}
 banco <- read_sav("longitudinal2 (1).sav")
 
-#view(banco[,c(102:106,157:159,170:174)])
-#View(banco[,c(170:173,191)])
 
 banco <- banco |> mutate(ipaq_vig = replace_na(ipaq_vig, 0),
                          ipaq_aftot = ipaq_vig + ipaq_mod,
@@ -54,14 +52,14 @@ banco <- banco |> mutate(ipaq_aftot_v.p3 = ipaq_aftot.p3,
 )
 
 banco <- banco |> mutate(ipaq_aftot = replace_na(ipaq_aftot, 0)) |> 
-  mutate(af_class = case_when(ipaq_aftot == 0 ~ "Sedentario",
-                              ipaq_aftot > 10 & ipaq_aftot < 150 ~ "Insuficiente",
-                              ipaq_aftot >= 150 & ipaq_aftot < 600 ~ "Ativo",
-                              ipaq_aftot >= 600 ~ "Muito ativo"))
+  mutate(af_class = case_when(ipaq_aftot == 0 ~ "Sedentary",
+                              ipaq_aftot > 10 & ipaq_aftot < 150 ~ "Insufficient",
+                              ipaq_aftot >= 150 & ipaq_aftot < 600 ~ "Active",
+                              ipaq_aftot >= 600 ~ "Very active"))
 
-modalidades <- banco |> select(starts_with("modalidade"), af_class)
-modalidades <- modalidades |> 
-  mutate(across(1:19, as.numeric))
+modalidades <- banco |> select(starts_with("Modalidade"), af_class) #Modalidade = modality
+modalidades <- modalidades |> #modalidades = modalities
+mutate(across(1:19, as.numeric))
 
 modalidades$duasoumais <- rowSums(modalidades[,1:19], na.rm = TRUE)
 
@@ -87,7 +85,7 @@ banco <- banco |> rename(exerc.p1 = exerc_atual,
                           qualsono.p1 = qualsono,
                           intrinseca.p1 = intrinseca,
                           integrada.p1 = integrada)
-
+# Variable labels: Email = participant identifier; Idade = age; exerc = exercise status; ipaq_aftot = total physical activity; qualsono = sleep quality; intrinseca = intrinsic regulation; integrada = integrated regulation; af_class = physical activity classification. Suffixes .p1, .p2, and .p3 indicate assessment timepoints T1, T2, and T3, respectively.
 
 banco$id <- seq(1, 93, 1)
 
@@ -116,7 +114,7 @@ dados_long$exerc <- factor(dados_long$exerc,
 dados_long$tempo <- factor(dados_long$tempo,
                            levels = c(1, 2, 3),
                            labels = c("T1", "T2", "T3"))
-# ```{r descriptive, echo=FALSE} deixei como comentario pq ele tava se atraplhando com essa divisão de chunk, mas não deve dar problema
+
 
 table(modalidades$duasoumais)
 prop.table(table(modalidades$duasoumais))*100
@@ -148,9 +146,9 @@ cor <- Hmisc::rcorr(
 
 cor$r   # rho
 cor$P   # p-values
-cor$n   # n de cada correlação
+cor$n   # n for each  correlation
 
-### gui, pensei em desse arquivo ficar no repositorio como material suplementar, entao tenta deixar os gráficos mais bonitinhos? talvez em tom / escala de cinza?!
+
 
 dados_long |>  drop_na (exerc) |> ggplot(aes(tempo, fill = factor(exerc)))+
   geom_bar(position = "dodge")+
@@ -163,13 +161,13 @@ scale_fill_grey()+
 theme_classic()
 
 getwd()
-# calculate scale factor to fit in the same graph
+
 scale_factor <- max(table(dados_long$exerc, dados_long$tempo)) / max(dados_long$ipaq_aftot, na.rm = TRUE)
 ```
 
 ```{r Change in exercise over time, echo=FALSE, fig.widht=10, fig.height=5}
 
-### Gui, tenta colocar os pontos tambem de cores ou formas diferentes, pra facilitar o entendimento de diferentes exercícios
+
 
 dados_long |>  drop_na() |>  
   ggplot(aes(x = factor(tempo), fill = factor(exerc))) +
@@ -268,7 +266,6 @@ theme_classic()
 
 ```{r Motivation, PA and sleep overtime, echo=FALSE, fig.height=18, fig.width=8}
 
-### Gui, ve se consegue deixar a figura mais comprida! acho que é algum ajuste aqui em cima no inicio do chunk (talvez: height=10, width=8) Aqui eu mudei o recode pra dplyr::recode pq deu erro quando rodei no meu pc, vou avisar sempre a alteração não for estética!
 
 df_sum <- dados_long |> 
   select(Email, tempo, intrinseca, integrada, qualsono, ipaq = ipaq_aftot) |> 
@@ -310,32 +307,27 @@ ggplot(df_sum, aes(x = as.numeric(tempo), y = media)) +
 ```{r ANOVA, echo=FALSE}
 library(rstatix)
 
-# ANOVA de medidas repetidas para cada variável ao longo do tempo
-# rstatix::anova_test já calcula teste de esfericidade (Mauchly) e aplica
-# correção de Greenhouse-Geisser automaticamente quando necessário
 
-# Qualidade do sono
 anova_qualsono <- dados_long |>
   anova_test(dv = qualsono, wid = id, within = tempo, effect.size = "both")
 get_anova_table(anova_qualsono)
 
-# Atividade física (IPAQ)
+
 anova_ipaq <- dados_long |>
   anova_test(dv = ipaq_aftot, wid = id, within = tempo, effect.size = "both")
 get_anova_table(anova_ipaq)
 
-# Regulação integrada
+
 anova_integrada <- dados_long |>
   anova_test(dv = integrada, wid = id, within = tempo, effect.size = "both")
 get_anova_table(anova_integrada)
 
-# Regulação intrínseca
+
 anova_intrinseca <- dados_long |>
   anova_test(dv = intrinseca, wid = id, within = tempo, effect.size = "both")
 get_anova_table(anova_intrinseca)
 
-# Comparações post-hoc pareadas (caso a ANOVA seja significativa),
-# com correção de Bonferroni
+
 dados_long |>
   pairwise_t_test(ipaq_aftot ~ tempo, paired = TRUE, p.adjust.method = "bonferroni")
 
@@ -390,7 +382,7 @@ confint(m_comb, method = "Wald")
 
 ```{r Forest plot P&B, echo=FALSE, fig.width=10}
 
-### Aqui eu vou fazer a mesma coisa mas em preto e branco, pensando na uniformidade, mas não quis apagar o anterior por não saber se vai ficar fácil de ver com a quantidade de informação no gráfico
+
 
 extract_model <- function(model, model_name) {
   broom.mixed::tidy(model, effects = "fixed", conf.int = TRUE, conf.method = "Wald") |>
@@ -518,52 +510,18 @@ print(forest)
 ```
 
 # Colinearity check
-```{r Colinearity check, fig.width=12, fig.height=14}
-
-## VIF - combined model
-performance::check_collinearity(m_comb)
-
-## R² marginal e condicional (Nakagawa & Schielzeth)
-performance::r2_nakagawa(m_comb)
-
-## ICC
-performance::icc(m_comb)
-
-## Visual check - Sumpplemntary materials
-p <- performance::check_model(m_comb)
-plot(p)
-png("check_model_comb.png", width = 12, height = 14, units = "in", res = 300)
-plot(p)
-dev.off()
-# código como tava ----- ggsave("check_model_comb.png", plot = p, width = 12, height = 14, dpi = 300) e deu erro rror in UseMethod("grid.draw") : método não aplicável para 'grid.draw' aplicado a um objeto de classe "c('check_model', 'see_check_model')" --- Mudei o código e o erro sumiu sem mudar os dados
-
-## CI more robust
-confint(m_comb, method = "boot", nsim = 1000, boot.type = "perc")
-# ou mais rápido:
-confint(m_comb, method = "profile")
-
-## Razao de verossimilhança
-m_intr_ml <- update(m_intr_z, REML = FALSE)
-m_comb_ml <- update(m_comb, REML = FALSE)
-anova(m_intr_ml, m_comb_ml)  # integrada melhora o ajuste?
-
-m_intg_ml <- update(m_intg_z, REML = FALSE)
-anova(m_intg_ml, m_comb_ml)  # intrinseca melhora o ajuste?
-
-```
 
 ```{r Colinearity check P&B, fig.width=12, fig.height=14}
-#Fiz parecido como antes, deixei tudo em preto e branco pra manter a uniformidade, ai tu vê qual tu prefere!
-## VIF - combined model
+
 performance::check_collinearity(m_comb)
 
-## R² marginal e condicional (Nakagawa & Schielzeth)
+
 performance::r2_nakagawa(m_comb)
 
-## ICC
+
 performance::icc(m_comb)
 
-## Visual check - Supplementary materials
+
 
 p <- performance::check_model(
   m_comb,
@@ -585,17 +543,17 @@ plot(p)
 
 dev.off()
 
-## CI more robust
+
 confint(m_comb, method = "boot", nsim = 1000, boot.type = "perc")
 
-# ou mais rápido:
+
 confint(m_comb, method = "profile")
 
-## Razao de verossimilhança
+
 m_intr_ml <- update(m_intr_z, REML = FALSE)
 m_comb_ml <- update(m_comb, REML = FALSE)
-anova(m_intr_ml, m_comb_ml)  # integrada melhora o ajuste?
+anova(m_intr_ml, m_comb_ml) 
 
 m_intg_ml <- update(m_intg_z, REML = FALSE)
-anova(m_intg_ml, m_comb_ml)  # intrinseca melhora o ajuste?
+anova(m_intg_ml, m_comb_ml) 
 ```
