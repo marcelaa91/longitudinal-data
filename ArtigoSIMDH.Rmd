@@ -1,0 +1,616 @@
+---
+title: Integrated Regulation Shows Unique Longitudinal Associations With Physical
+  Activity
+author: Marcela Alves Sanseverino, Guilherme Meneghetti Autran de Morais, Rodrigo Rodrigues, Wagner de
+  Lara Machado
+date: "2026-08-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# setwd("~/Library/CloudStorage/OneDrive-PUCRS-BR/Documentos/Doutorado/Análises/Léo/
+knitr::opts_knit$set(
+  root.dir = "C:/Users/guilh/Documents/Análises Marcela"
+)
+
+knitr::opts_chunk$set(
+  warning = FALSE,
+  message = FALSE
+)
+
+library(haven)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(lmerTest)
+library(broom.mixed)
+library(performance)
+library(car)
+library(see)
+library(rstatix)
+
+# English labels for rendered outputs only
+output_labels <- c(
+  "ipaq_aftot" = "Physical activity",
+  "tempoT2"    = "Timepoint T2",
+  "tempoT3"    = "Timepoint T3",
+  "tempo"      = "Timepoint",
+  "Idade"      = "Age",
+  "intrinseca" = "Intrinsic regulation",
+  "integrada"  = "Integrated regulation",
+  "qualsono"   = "Sleep quality"
+)
+
+original_output_hook <- knitr::knit_hooks$get("output")
+
+knitr::knit_hooks$set(output = function(x, options) {
+  for (old in names(output_labels)) {
+    x <- gsub(
+      paste0("\\b", old, "\\b"),
+      output_labels[[old]],
+      x,
+      perl = TRUE
+    )
+  }
+  
+  original_output_hook(x, options)
+})
+
+```
+
+```{r data cleaning, include=FALSE}
+banco <- read_sav("longitudinal2 (1).sav")
+
+
+banco <- banco |> mutate(ipaq_vig = replace_na(ipaq_vig, 0),
+                         ipaq_aftot = ipaq_vig + ipaq_mod,
+                         ipaq_aftot2.x = ipaq_vig + ipaq_mod + ipaq_cam.x)
+
+banco <- banco |> mutate(ipaq_aftot_v.p2 = ipaq_aftot.p2,
+                         ipaq_aftot.p2 = if_else(
+                           is.na(ipaq_vig.p2) & is.na(ipaq_mod.p2), 
+                           NA_real_, 
+                           rowSums(cbind(ipaq_vig.p2, ipaq_mod.p2), na.rm = TRUE)
+                         )
+)
+
+
+banco <- banco |> mutate(ipaq_aftot_v.p3 = ipaq_aftot.p3,
+                         ipaq_aftot.p3 = if_else(
+                           is.na(ipaq_vig.p3) & is.na(ipaq_mod.p3), 
+                           NA_real_, 
+                           rowSums(cbind(ipaq_vig.p3, ipaq_mod.p3), na.rm = TRUE)
+                         )
+)
+
+banco <- banco |> mutate(ipaq_aftot = replace_na(ipaq_aftot, 0)) |> 
+  mutate(af_class = case_when(ipaq_aftot == 0 ~ "Sedentary",
+                              ipaq_aftot > 10 & ipaq_aftot < 150 ~ "Insufficient",
+                              ipaq_aftot >= 150 & ipaq_aftot < 600 ~ "Active",
+                              ipaq_aftot >= 600 ~ "Very active"))
+
+modalidades <- banco |> select(starts_with("Modalidade"), af_class) #Modalidade = modality
+modalidades <- modalidades |> #modalidades = modalities
+mutate(across(1:19, as.numeric))
+
+modalidades$duasoumais <- rowSums(modalidades[,1:19], na.rm = TRUE)
+
+```
+
+
+
+
+
+```{r data separation for analysis, include=FALSE}
+
+banco <- banco |> select(Email, Idade,
+                          exerc_atual, manu_longi, long_2,
+                          ipaq_aftot, ipaq_aftot.p2, ipaq_aftot.p3,
+                          qualsono, qualsono.p2, qualsono.p3,
+                          intrinseca, intrinseca.p2, intrinseca.p3,
+                          integrada, integrada.p2, integrada.p3,
+                         af_class)
+banco <- banco |> rename(exerc.p1 = exerc_atual,
+                          exerc.p2 = manu_longi,
+                          exerc.p3 = long_2,
+                          ipaq_aftot.p1 = ipaq_aftot,
+                          qualsono.p1 = qualsono,
+                          intrinseca.p1 = intrinseca,
+                          integrada.p1 = integrada)
+# Variable labels: Email = participant identifier; Idade = age; exerc = exercise status; ipaq_aftot = total physical activity; qualsono = sleep quality; intrinseca = intrinsic regulation; integrada = integrated regulation; af_class = physical activity classification. Suffixes .p1, .p2, and .p3 indicate assessment timepoints T1, T2, and T3, respectively.
+
+banco$id <- seq(1, 93, 1)
+
+banco <- banco |> 
+  mutate(exerc.p1 = exerc.p1 + 1)
+
+str(banco$exerc.p1)
+
+dados_long <- banco |>
+  pivot_longer(
+      cols = -c(Email, id, Idade),
+    names_to = c(".value", "tempo"),
+    names_pattern = "(.+)\\.p(\\d+)"
+  ) |> 
+  mutate(
+    tempo = as.integer(tempo)
+  ) |> 
+  arrange(Email, tempo)
+
+str(dados_long$exerc)
+
+dados_long$exerc <- factor(dados_long$exerc,
+                           levels = c(1, 2, 3),
+                           labels = c("Reduced", "Maintained", "Increased"))
+
+dados_long$tempo <- factor(dados_long$tempo,
+                           levels = c(1, 2, 3),
+                           labels = c("T1", "T2", "T3"))
+
+
+table(modalidades$duasoumais)
+prop.table(table(modalidades$duasoumais))*100
+
+table(modalidades$af_class)
+prop.table(table(modalidades$af_class))*100
+```
+```{r correlation, echo=FALSE}
+
+vars_cor <- banco |> 
+  select(
+    Idade,
+    ipaq_aftot.p1, qualsono.p1, intrinseca.p1, integrada.p1,
+    ipaq_aftot.p2, qualsono.p2, intrinseca.p2, integrada.p2,
+    ipaq_aftot.p3, qualsono.p3, intrinseca.p3, integrada.p3
+  )
+
+names(vars_cor) <- c(
+  "Age",
+  "T1_PA", "T1_SQ", "T1_Ins", "T1_Int",
+  "T2_PA", "T2_SQ", "T2_Ins", "T2_Int",
+  "T3_PA", "T3_SQ", "T3_Ins", "T3_Int"
+)
+
+cor <- Hmisc::rcorr(
+  as.matrix(vars_cor),
+  type = "spearman"
+)
+
+cor$r   # rho
+cor$P   # p-values
+cor$n   # n for each  correlation
+
+
+
+dados_long |>  drop_na (exerc) |> ggplot(aes(tempo, fill = factor(exerc)))+
+  geom_bar(position = "dodge")+
+  labs(
+    x = "Timepoints",
+    y = "Count",
+    fill = "Exercise - past 6 months"
+  )+
+scale_fill_manual(
+  values = c(
+    "#3B5F8A",  # Blue
+    "#B55D3E",  # Terracotta
+    "#5C7A5D"   # Green
+  )
+)+
+theme_classic()
+
+getwd()
+
+scale_factor <- max(table(dados_long$exerc, dados_long$tempo)) / max(dados_long$ipaq_aftot, na.rm = TRUE)
+```
+
+```{r Change in exercise over time, echo=FALSE, fig.widht=10, fig.height=5}
+
+
+
+cores_exerc <- c(
+  "#3B5F8A",  # Blue
+  "#B55D3E",  # Terracotta
+  "#5C7A5D"   # Green
+)
+
+dados_long |>  drop_na() |>  
+  ggplot(aes(x = factor(tempo), fill = factor(exerc))) +
+  geom_bar(position = position_dodge(width = 0.9)) +
+  geom_text(
+    stat = "count",
+    aes(label = after_stat(count), group = factor(exerc)),
+    position = position_dodge(width = 0.9),
+    vjust = -0.3,
+    size = 4
+  ) +
+  stat_summary(
+    aes(
+      y = ipaq_aftot, 
+      group = factor(exerc),
+      shape = factor(exerc),
+      color = factor(exerc)
+    ),
+    fun = mean,
+    geom = "point",
+    position = position_dodge(width = 0.9),
+    size = 3
+  ) +
+  scale_fill_manual(values = cores_exerc) +
+  scale_color_manual(values = cores_exerc) +
+  scale_shape_manual(values = c(17, 15, 18)) +
+  labs(
+    x = "Timepoint",
+    y = "Frequence (bars) / PA time (dots)",
+    fill = "Exercise - past 6 months",
+    shape = "Exercise - past 6 months",
+    color = "Exercise - past 6 months"
+  ) +
+  theme(
+    panel.background = element_rect(fill = "white"),
+    plot.background = element_rect(fill = "white")
+  )
+```
+
+```{r Change in intrisic regulation over time, echo=FALSE}
+
+dados_long |>  drop_na() |>  
+  ggplot(aes(x = factor(tempo), fill = factor(exerc))) +
+  geom_bar(position = position_dodge(width = 0.9)) +
+  geom_text(
+    stat = "count",
+    aes(label = after_stat(count), group = factor(exerc)),
+    position = position_dodge(width = 0.9),
+    vjust = -0.3,
+    size = 4
+  ) +
+  stat_summary(
+    aes(y = intrinseca, group = factor(exerc)),
+    fun = mean,
+    geom = "point",
+    position = position_dodge(width = 0.9),
+    size = 3
+  ) +
+  labs(
+    x = "Timepoint",
+    y = "Frequence (bars) / Intrinsic regulation (dots)",
+    fill = "Exercise - past 6 months"
+  )+
+scale_fill_manual(
+  values = c(
+    "#3B5F8A",
+    "#B55D3E",
+    "#5C7A5D"
+  )
+) +
+theme_classic()
+
+```
+
+
+```{r Change in integrated regulation over time, echo=FALSE}
+dados_long |>  drop_na() |>  
+  ggplot(aes(x = factor(tempo), fill = factor(exerc))) +
+  geom_bar(position = position_dodge(width = 0.9)) +
+  geom_text(
+    stat = "count",
+    aes(label = after_stat(count), group = factor(exerc)),
+    position = position_dodge(width = 0.9),
+    vjust = -0.3,
+    size = 4
+  ) +
+  stat_summary(
+    aes(y = integrada, group = factor(exerc)),
+    fun = mean,
+    geom = "point",
+    position = position_dodge(width = 0.9),
+    size = 3
+  ) +
+  labs(
+    x = "Timepoint",
+    y = "Frequence (bars) / Integrated regulation (dots)",
+    fill = "Exercise - past 6 months"
+  )+
+scale_fill_manual(
+  values = c(
+    "#3B5F8A",
+    "#B55D3E",
+    "#5C7A5D"
+  )
+) +
+theme_classic()
+
+```
+
+```{r Motivation, PA and sleep overtime, echo=FALSE, fig.height=18, fig.width=8}
+
+
+df_sum <- dados_long |> 
+  select(Email, tempo, intrinseca, integrada, qualsono, ipaq = ipaq_aftot) |> 
+  pivot_longer(
+    cols = c(intrinseca, integrada, qualsono, ipaq),
+    names_to = "variavel",
+    values_to = "valor"
+  ) |> 
+  group_by(tempo, variavel) |> 
+  summarise(
+    n = sum(!is.na(valor)),
+    media = mean(valor, na.rm = TRUE),
+    sd = sd(valor, na.rm = TRUE),
+    se = sd / sqrt(n),
+    .groups = "drop"
+  ) |> 
+  mutate(
+    variavel = dplyr::recode(
+      variavel,
+      intrinseca = "Intrinsic Regulation",
+      integrada  = "Integrated Regulation",
+      qualsono   = "Sleep Quality",
+      ipaq       = "Total PA (min)"
+    )
+  )
+
+ggplot(df_sum, aes(x = as.numeric(tempo), y = media)) +
+  geom_line() +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = media - se, ymax = media + se), width = 0.1) +
+  facet_wrap(~ variavel, scales = "free_y", ncol = 1) +
+  scale_x_continuous(breaks = c(1, 2, 3)) +
+  labs(
+    x = "Timepoints",
+    y = "Mean (± SE)",
+    title = "Motivation, PA and sleep overtime"
+  )
+```
+```{r ANOVA, echo=FALSE}
+
+
+
+dados_long |>
+  pairwise_t_test(ipaq_aftot ~ tempo, paired = TRUE, p.adjust.method = "bonferroni") |>
+  mutate(.y. = dplyr::recode(
+    .y.,
+    ipaq_aftot = "Physical activity"
+  ))
+
+dados_long |>
+  pairwise_t_test(qualsono ~ tempo, paired = TRUE, p.adjust.method = "bonferroni") |>
+  mutate(.y. = dplyr::recode(
+    .y.,
+    qualsono = "Sleep quality"
+  ))
+
+dados_long |>
+  pairwise_t_test(integrada ~ tempo, paired = TRUE, p.adjust.method = "bonferroni") |>
+  mutate(.y. = dplyr::recode(
+    .y.,
+    integrada = "Integrated regulation"
+  ))
+
+dados_long |>
+  pairwise_t_test(intrinseca ~ tempo, paired = TRUE, p.adjust.method = "bonferroni") |>
+  mutate(.y. = dplyr::recode(
+    .y.,
+    intrinseca = "Intrinsic regulation"
+  ))
+
+```
+
+```{r Model 1 - Integrated regulation, echo=FALSE}
+dados_z <- dados_long |> 
+  mutate(across(c(ipaq_aftot, intrinseca, integrada, qualsono, Idade),
+                ~ as.numeric(scale(.x))))
+
+dados_z$tempo <- as.factor(dados_z$tempo)
+
+m_intg_z <- lmerTest::lmer(ipaq_aftot ~ tempo + Idade + integrada + qualsono + (1 | id),
+                 data = dados_z)
+summary(m_intg_z)
+confint(m_intg_z, method = "Wald")
+```
+
+```{r Model 2 - Intrinsic regulation, echo=FALSE}
+
+
+m_intr_z <- lmerTest::lmer(ipaq_aftot ~ tempo + Idade + intrinseca + qualsono + (1 | id),
+                 data = dados_z)
+
+summary(m_intr_z)
+confint(m_intr_z, method = "Wald")
+
+```
+
+
+```{r Model 3 - Combined, echo=FALSE}
+
+m_comb <- lmerTest::lmer(ipaq_aftot ~ tempo + Idade +  intrinseca + integrada + qualsono + (1 | id),
+               data = dados_z)
+summary(m_comb)
+confint(m_comb, method = "Wald")
+
+```
+
+
+
+
+```{r Forest plot, echo=FALSE, fig.width=10}
+
+
+
+extract_model <- function(model, model_name) {
+  broom.mixed::tidy(model, effects = "fixed", conf.int = TRUE, conf.method = "Wald") |>
+    mutate(model = model_name)
+}
+
+res <- bind_rows(
+  extract_model(m_intg_z, "Model 1: Integrated Reg."),
+  extract_model(m_intr_z, "Model 2: Intrinsic Reg."),
+  extract_model(m_comb,   "Model 3: Combined")
+) |>
+  filter(term != "(Intercept)") |>
+  mutate(
+    model = factor(
+      model,
+      levels = c(
+        "Model 1: Integrated Reg.",
+        "Model 2: Intrinsic Reg.",
+        "Model 3: Combined"
+      )
+    ),
+    signif = p.value < 0.05,
+    term = dplyr::recode(
+      term,
+      tempoT2    = "Timepoints (T2 vs T1)",
+      tempoT3    = "Timepoints (T3 vs T1)",
+      Idade      = "Age",
+      intrinseca = "Intrinsic Reg.",
+      integrada  = "Integrated Reg.",
+      qualsono   = "Sleep Quality"
+    ),
+    term = factor(
+      term,
+      levels = rev(c(
+        "Timepoints (T2 vs T1)",
+        "Timepoints (T3 vs T1)",
+        "Age",
+        "Intrinsic Reg.",
+        "Integrated Reg.",
+        "Sleep Quality"
+      ))
+    )
+  )
+
+forest <- ggplot(
+  res,
+  aes(
+    x = estimate,
+    y = term,
+    color = model,
+    group = model
+  )
+) +
+  geom_vline(
+    xintercept = 0,
+    linetype = "dashed",
+    color = "grey50"
+  ) +
+  geom_pointrange(
+    aes(
+      xmin = conf.low,
+      xmax = conf.high,
+      shape = signif
+    ),
+    position = position_dodge(width = 0.6, reverse = TRUE),
+    size = 0.7,
+    fatten = 2.2,
+    linetype = "solid"
+  ) +
+  scale_shape_manual(
+    values = c(
+      `TRUE` = 16,
+      `FALSE` = 1
+    ),
+    labels = c(
+      `TRUE` = "p < .05",
+      `FALSE` = "n.s."
+    ),
+    name = "Significance"
+  ) +
+  scale_color_manual(
+    values = c(
+      "Model 1: Integrated Reg." = "#3B5F8A",
+      "Model 2: Intrinsic Reg."  = "#B55D3E",
+      "Model 3: Combined"        = "#5C7A5D"
+    ),
+    breaks = c(
+      "Model 1: Integrated Reg.",
+      "Model 2: Intrinsic Reg.",
+      "Model 3: Combined"
+    ),
+    name = "Model"
+  ) +
+  guides(
+    shape = guide_legend(order = 1),
+    color = guide_legend(
+      order = 2,
+      override.aes = list(shape = NA, linetype = "solid")
+    )
+  ) +
+  labs(
+    x = "Standardized coefficient (β) [95% CI]",
+    y = NULL,
+    title = "PA predictors over time",
+    subtitle = "Comparison among the three models"
+  ) +
+  coord_cartesian(clip = "off") +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "bottom",
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold"),
+    plot.margin = margin(5.5, 30, 5.5, 5.5)
+  )
+
+ggsave(
+  "ci_models.png",
+  plot = forest,
+  width = 10,
+  height = 8,
+  dpi = 300
+)
+
+print(forest)
+```
+
+# Colinearity check
+
+```{r Colinearity check, fig.width=12, fig.height=14}
+
+performance::check_collinearity(m_comb)
+
+
+performance::r2_nakagawa(m_comb)
+
+
+performance::icc(m_comb)
+
+
+
+p <- performance::check_model(
+  m_comb,
+  colors = c("#2F5D62", "#C97A5A", "#D6A84B"),
+  theme = ggplot2::theme_classic()
+)
+
+plot(p)
+
+png(
+  "check_model_comb.png",
+  width = 12,
+  height = 14,
+  units = "in",
+  res = 300
+)
+
+plot(p)
+
+dev.off()
+
+
+confint(m_comb, method = "boot", nsim = 1000, boot.type = "perc")
+
+
+confint(m_comb, method = "profile")
+
+
+
+m_intg_ml <- update(m_intg_z, REML = FALSE)
+m_comb_ml <- update(m_comb, REML = FALSE)
+
+anova(m_intg_ml, m_comb_ml)
+
+
+
+m_intr_ml <- update(m_intr_z, REML = FALSE)
+
+anova(m_intr_ml, m_comb_ml)
+```
